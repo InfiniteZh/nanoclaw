@@ -132,26 +132,37 @@ function buildVolumeMounts(
   // Always rewrite so .env changes take effect on next container spawn
   fs.writeFileSync(settingsFile, JSON.stringify({ env: settingsEnv }, null, 2) + '\n');
 
-  // Sync skills from container/skills/ into each group's .claude/skills/
-  const skillsSrc = path.join(process.cwd(), 'container', 'skills');
-  const skillsDst = path.join(groupSessionsDir, 'skills');
-  if (fs.existsSync(skillsSrc)) {
-    for (const skillDir of fs.readdirSync(skillsSrc)) {
-      const srcDir = path.join(skillsSrc, skillDir);
-      if (!fs.statSync(srcDir).isDirectory()) continue;
-      const dstDir = path.join(skillsDst, skillDir);
-      fs.mkdirSync(dstDir, { recursive: true });
-      for (const file of fs.readdirSync(srcDir)) {
-        const srcFile = path.join(srcDir, file);
-        const dstFile = path.join(dstDir, file);
-        fs.copyFileSync(srcFile, dstFile);
-      }
+  // Sync MCP server config from container/config/mcporter.json into .claude/.mcp.json
+  const mcpConfigSrc = path.join(process.cwd(), 'container', 'config', 'mcporter.json');
+  if (fs.existsSync(mcpConfigSrc)) {
+    const mcpConfig = JSON.parse(fs.readFileSync(mcpConfigSrc, 'utf-8'));
+    // Transform to Claude Code .mcp.json format (url-based servers use streamable-http type)
+    const mcpOut: Record<string, any> = { mcpServers: {} };
+    for (const [name, server] of Object.entries(mcpConfig.mcpServers || {})) {
+      const s = server as any;
+      mcpOut.mcpServers[name] = {
+        url: s.url,
+        type: 'streamable-http',
+      };
     }
+    const mcpFile = path.join(groupSessionsDir, '.mcp.json');
+    fs.writeFileSync(mcpFile, JSON.stringify(mcpOut, null, 2) + '\n');
   }
+
   mounts.push({
     hostPath: groupSessionsDir,
     containerPath: '/home/node/.claude',
     readonly: false,
+  });
+
+  // Bind-mount skills directly from project so container-written skills persist back.
+  // Main group gets read-write access; others get read-only.
+  const skillsSrc = path.join(process.cwd(), 'container', 'skills');
+  fs.mkdirSync(skillsSrc, { recursive: true });
+  mounts.push({
+    hostPath: skillsSrc,
+    containerPath: '/home/node/.claude/skills',
+    readonly: !isMain,
   });
 
   // Per-group IPC namespace: each group gets its own IPC directory
