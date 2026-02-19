@@ -209,6 +209,11 @@ function buildContainerArgs(mounts: VolumeMount[], containerName: string): strin
     args.push('-e', 'HOME=/home/node');
   }
 
+  // Pass timezone to container so Date parsing matches the host
+  if (process.env.TZ) {
+    args.push('-e', `TZ=${process.env.TZ}`);
+  }
+
   // Apple Container: --mount for readonly, -v for read-write
   for (const mount of mounts) {
     if (mount.readonly) {
