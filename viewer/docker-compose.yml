@@ -1,0 +1,14 @@
+services:
+  nanoclaw-viewer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      NODE_ENV: production
+      PORT: "3400"
+    ports:
+      - "3400:3400"
+    volumes:
+      - ../data/sessions:/data/sessions:ro
+    restart: unless-stopped
+    init: true

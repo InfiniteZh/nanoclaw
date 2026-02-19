@@ -1,0 +1,100 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --color-bg-primary: #ffffff;
+  --color-bg-secondary: #f9fafb;
+  --color-bg-tertiary: #f3f4f6;
+  --color-text-primary: #111827;
+  --color-text-secondary: #6b7280;
+  --color-border: #e5e7eb;
+  --color-accent: #3b82f6;
+  --color-accent-hover: #2563eb;
+  --color-user-bubble: #3b82f6;
+  --color-user-text: #ffffff;
+  --color-thinking-bg: #fef9c3;
+  --color-thinking-border: #fde047;
+  --color-tool-bg: #eff6ff;
+  --color-tool-border: #93c5fd;
+  --color-system-bg: #f3f4f6;
+  --color-system-border: #d1d5db;
+  --color-summary-bg: #f0fdf4;
+  --color-summary-border: #86efac;
+}
+
+.dark {
+  --color-bg-primary: #0f172a;
+  --color-bg-secondary: #1e293b;
+  --color-bg-tertiary: #334155;
+  --color-text-primary: #f1f5f9;
+  --color-text-secondary: #94a3b8;
+  --color-border: #334155;
+  --color-accent: #60a5fa;
+  --color-accent-hover: #3b82f6;
+  --color-user-bubble: #2563eb;
+  --color-user-text: #ffffff;
+  --color-thinking-bg: #422006;
+  --color-thinking-border: #a16207;
+  --color-tool-bg: #172554;
+  --color-tool-border: #1e40af;
+  --color-system-bg: #1e293b;
+  --color-system-border: #475569;
+  --color-summary-bg: #052e16;
+  --color-summary-border: #166534;
+}
+
+body {
+  background-color: var(--color-bg-primary);
+  color: var(--color-text-primary);
+}
+
+/* Markdown content styles */
+.markdown-content h1,
+.markdown-content h2,
+.markdown-content h3 {
+  font-weight: 600;
+  margin-top: 1em;
+  margin-bottom: 0.5em;
+}
+.markdown-content h1 { font-size: 1.5em; }
+.markdown-content h2 { font-size: 1.25em; }
+.markdown-content h3 { font-size: 1.1em; }
+.markdown-content p { margin-bottom: 0.5em; }
+.markdown-content ul, .markdown-content ol {
+  margin-left: 1.5em;
+  margin-bottom: 0.5em;
+}
+.markdown-content ul { list-style-type: disc; }
+.markdown-content ol { list-style-type: decimal; }
+.markdown-content code:not(pre code) {
+  background-color: var(--color-bg-tertiary);
+  padding: 0.1em 0.3em;
+  border-radius: 0.25em;
+  font-size: 0.9em;
+}
+.markdown-content pre {
+  background-color: var(--color-bg-tertiary);
+  padding: 0.75em;
+  border-radius: 0.5em;
+  overflow-x: auto;
+  margin-bottom: 0.5em;
+}
+.markdown-content a {
+  color: var(--color-accent);
+  text-decoration: underline;
+}
+.markdown-content blockquote {
+  border-left: 3px solid var(--color-border);
+  padding-left: 0.75em;
+  color: var(--color-text-secondary);
+  margin-bottom: 0.5em;
+}
+.markdown-content table {
+  border-collapse: collapse;
+  margin-bottom: 0.5em;
+}
+.markdown-content th, .markdown-content td {
+  border: 1px solid var(--color-border);
+  padding: 0.25em 0.5em;
+}
