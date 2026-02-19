@@ -9,7 +9,9 @@ import {
   MAIN_GROUP_FOLDER,
   POLL_INTERVAL,
   TRIGGER_PATTERN,
+  ENABLED_CHANNELS,
 } from './config.js';
+import { FeishuChannel } from './channels/feishu.js';
 import { WhatsAppChannel } from './channels/whatsapp.js';
 import {
   ContainerOutput,
@@ -48,7 +50,7 @@ let registeredGroups: Record<string, RegisteredGroup> = {};
 let lastAgentTimestamp: Record<string, string> = {};
 let messageLoopRunning = false;
 
-let whatsapp: WhatsAppChannel;
+let whatsapp: WhatsAppChannel | undefined;
 const channels: Channel[] = [];
 const queue = new GroupQueue();
 
@@ -484,10 +486,36 @@ async function main(): Promise<void> {
     registeredGroups: () => registeredGroups,
   };
 
-  // Create and connect channels
-  whatsapp = new WhatsAppChannel(channelOpts);
-  channels.push(whatsapp);
-  await whatsapp.connect();
+  // Create and connect channels based on ENABLED_CHANNELS config
+  if (ENABLED_CHANNELS.has('whatsapp')) {
+    whatsapp = new WhatsAppChannel(channelOpts);
+    channels.push(whatsapp);
+    await whatsapp.connect();
+  }
+
+  if (ENABLED_CHANNELS.has('feishu')) {
+    const feishu = new FeishuChannel({
+      ...channelOpts,
+      autoRegisterChat: (jid, name) => {
+        registerGroup(jid, {
+          name,
+          folder: jid.replace(/[^a-zA-Z0-9_-]/g, '_'),
+          trigger: `@${ASSISTANT_NAME}`,
+          added_at: new Date().toISOString(),
+          requiresTrigger: false,
+        });
+      },
+    });
+    channels.push(feishu);
+    await feishu.connect();
+  }
+
+  if (channels.length === 0) {
+    logger.error('No channels enabled. Set ENABLED_CHANNELS in .env (e.g. "whatsapp", "feishu", or "whatsapp,feishu")');
+    process.exit(1);
+  }
+
+  logger.info({ channels: channels.map((c) => c.name) }, 'Channels connected');
 
   // Start subsystems (independently of connection handler)
   startSchedulerLoop({

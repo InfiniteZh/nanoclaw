@@ -8,12 +8,32 @@ import { readEnvFile } from './env.js';
 const envConfig = readEnvFile([
   'ASSISTANT_NAME',
   'ASSISTANT_HAS_OWN_NUMBER',
+  'ENABLED_CHANNELS',
+  'FEISHU_APP_ID',
+  'FEISHU_APP_SECRET',
+  'FEISHU_DOMAIN',
 ]);
 
 export const ASSISTANT_NAME =
   process.env.ASSISTANT_NAME || envConfig.ASSISTANT_NAME || 'Andy';
 export const ASSISTANT_HAS_OWN_NUMBER =
   (process.env.ASSISTANT_HAS_OWN_NUMBER || envConfig.ASSISTANT_HAS_OWN_NUMBER) === 'true';
+// Enabled channels (comma-separated, e.g. "whatsapp,feishu")
+// Defaults to "whatsapp" for backwards compatibility
+const enabledChannelsRaw =
+  process.env.ENABLED_CHANNELS || envConfig.ENABLED_CHANNELS || 'whatsapp';
+export const ENABLED_CHANNELS = new Set(
+  enabledChannelsRaw.split(',').map((c) => c.trim().toLowerCase()).filter(Boolean),
+);
+
+// Feishu / Lark configuration
+export const FEISHU_APP_ID =
+  process.env.FEISHU_APP_ID || envConfig.FEISHU_APP_ID || '';
+export const FEISHU_APP_SECRET =
+  process.env.FEISHU_APP_SECRET || envConfig.FEISHU_APP_SECRET || '';
+export const FEISHU_DOMAIN =
+  process.env.FEISHU_DOMAIN || envConfig.FEISHU_DOMAIN || 'feishu'; // 'feishu' or 'lark'
+
 export const POLL_INTERVAL = 2000;
 export const SCHEDULER_POLL_INTERVAL = 60000;
 
