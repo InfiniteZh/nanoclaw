@@ -5,7 +5,6 @@ import path from 'path';
 
 import {
   GROUPS_DIR,
-  IDLE_TIMEOUT,
   MAIN_GROUP_FOLDER,
   SCHEDULER_POLL_INTERVAL,
   TIMEZONE,
@@ -18,7 +17,7 @@ import {
   logTaskRun,
   updateTaskAfterRun,
 } from './db.js';
-import { GroupQueue } from './group-queue.js';
+import type { GroupQueue } from './group-queue.js';
 import { logger } from './logger.js';
 import { RegisteredGroup, ScheduledTask } from './types.js';
 
@@ -37,6 +36,10 @@ async function runTask(
   const startTime = Date.now();
   const groupDir = path.join(GROUPS_DIR, task.group_folder);
   fs.mkdirSync(groupDir, { recursive: true });
+
+  // Each scheduled task uses a unique queue key so it runs in its own
+  // independent container slot, separate from group conversations.
+  const taskQueueKey = `scheduled-task-${task.id}`;
 
   logger.info(
     { taskId: task.id, group: task.group_folder },
@@ -89,18 +92,6 @@ async function runTask(
   const sessionId =
     task.context_mode === 'group' ? sessions[task.group_folder] : undefined;
 
-  // Idle timer: writes _close sentinel after IDLE_TIMEOUT of no output,
-  // so the container exits instead of hanging at waitForIpcMessage forever.
-  let idleTimer: ReturnType<typeof setTimeout> | null = null;
-
-  const resetIdleTimer = () => {
-    if (idleTimer) clearTimeout(idleTimer);
-    idleTimer = setTimeout(() => {
-      logger.debug({ taskId: task.id }, 'Scheduled task idle timeout, closing container stdin');
-      deps.queue.closeStdin(task.chat_jid);
-    }, IDLE_TIMEOUT);
-  };
-
   try {
     const output = await runContainerAgent(
       group,
@@ -111,23 +102,20 @@ async function runTask(
         chatJid: task.chat_jid,
         isMain,
         isScheduledTask: true,
+        taskId: task.id,
       },
-      (proc, containerName) => deps.onProcess(task.chat_jid, proc, containerName, task.group_folder),
+      (proc, containerName) => deps.onProcess(taskQueueKey, proc, containerName, task.group_folder),
       async (streamedOutput: ContainerOutput) => {
         if (streamedOutput.result) {
           result = streamedOutput.result;
           // Forward result to user (sendMessage handles formatting)
           await deps.sendMessage(task.chat_jid, streamedOutput.result);
-          // Only reset idle timer on actual results, not session-update markers
-          resetIdleTimer();
         }
         if (streamedOutput.status === 'error') {
           error = streamedOutput.error || 'Unknown error';
         }
       },
     );
-
-    if (idleTimer) clearTimeout(idleTimer);
 
     if (output.status === 'error') {
       error = output.error || 'Unknown error';
@@ -141,7 +129,6 @@ async function runTask(
       'Task completed',
     );
   } catch (err) {
-    if (idleTimer) clearTimeout(idleTimer);
     error = err instanceof Error ? err.message : String(err);
     logger.error({ taskId: task.id, error }, 'Task failed');
   }
@@ -175,7 +162,28 @@ async function runTask(
       ? result.slice(0, 200)
       : 'Completed';
   updateTaskAfterRun(task.id, nextRun, resultSummary);
+  inflightTasks.delete(task.id);
+
+  // Refresh the tasks snapshot so containers see up-to-date status
+  const updatedTasks = getAllTasks();
+  writeTasksSnapshot(
+    task.group_folder,
+    isMain,
+    updatedTasks.map((t) => ({
+      id: t.id,
+      groupFolder: t.group_folder,
+      prompt: t.prompt,
+      schedule_type: t.schedule_type,
+      schedule_value: t.schedule_value,
+      status: t.status,
+      next_run: t.next_run,
+    })),
+  );
 }
+
+// Track in-flight task IDs to prevent the scheduler from re-picking
+// tasks that are already queued or running (especially once tasks).
+const inflightTasks = new Set<string>();
 
 let schedulerRunning = false;
 
@@ -195,14 +203,24 @@ export function startSchedulerLoop(deps: SchedulerDependencies): void {
       }
 
       for (const task of dueTasks) {
+        // Skip tasks already queued or running
+        if (inflightTasks.has(task.id)) {
+          continue;
+        }
+
         // Re-check task status in case it was paused/cancelled
         const currentTask = getTaskById(task.id);
         if (!currentTask || currentTask.status !== 'active') {
           continue;
         }
 
+        inflightTasks.add(currentTask.id);
+
+        // Use a task-specific queue key so scheduled tasks don't share
+        // the queue slot with regular group conversations.
+        const taskQueueKey = `scheduled-task-${currentTask.id}`;
         deps.queue.enqueueTask(
-          currentTask.chat_jid,
+          taskQueueKey,
           currentTask.id,
           () => runTask(currentTask, deps),
         );

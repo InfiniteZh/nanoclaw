@@ -9,8 +9,8 @@ import {
   MAIN_GROUP_FOLDER,
   TIMEZONE,
 } from './config.js';
-import { AvailableGroup } from './container-runner.js';
-import { createTask, deleteTask, getTaskById, updateTask } from './db.js';
+import { AvailableGroup, writeTasksSnapshot } from './container-runner.js';
+import { createTask, deleteTask, getAllTasks, getTaskById, updateTask } from './db.js';
 import { logger } from './logger.js';
 import { RegisteredGroup } from './types.js';
 
@@ -345,7 +345,7 @@ export async function processTaskIpc(
           'Unauthorized refresh_groups attempt blocked',
         );
       }
-      break;
+      return; // Not a task mutation, skip snapshot refresh
 
     case 'register_group':
       // Only main group can register new groups
@@ -354,7 +354,7 @@ export async function processTaskIpc(
           { sourceGroup },
           'Unauthorized register_group attempt blocked',
         );
-        break;
+        return;
       }
       if (data.jid && data.name && data.folder && data.trigger) {
         deps.registerGroup(data.jid, {
@@ -371,9 +371,25 @@ export async function processTaskIpc(
           'Invalid register_group request - missing required fields',
         );
       }
-      break;
+      return; // Not a task mutation, skip snapshot refresh
 
     default:
       logger.warn({ type: data.type }, 'Unknown IPC task type');
+      return; // Not a task mutation, skip snapshot refresh
+  }
+
+  // Refresh tasks snapshot for all registered groups after any task mutation
+  const allTasks = getAllTasks();
+  const taskEntries = allTasks.map((t) => ({
+    id: t.id,
+    groupFolder: t.group_folder,
+    prompt: t.prompt,
+    schedule_type: t.schedule_type,
+    schedule_value: t.schedule_value,
+    status: t.status,
+    next_run: t.next_run,
+  }));
+  for (const [jid, group] of Object.entries(registeredGroups)) {
+    writeTasksSnapshot(group.folder, group.folder === MAIN_GROUP_FOLDER, taskEntries);
   }
 }

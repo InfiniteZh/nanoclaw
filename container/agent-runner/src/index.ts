@@ -364,8 +364,16 @@ async function runQuery(
   const stream = new MessageStream();
   stream.push(prompt);
 
-  // Poll IPC for follow-up messages and _close sentinel during the query
-  let ipcPolling = true;
+  // Scheduled tasks are one-shot: end the stream immediately so the SDK
+  // knows there are no follow-up messages and exits after the first result.
+  if (containerInput.isScheduledTask) {
+    stream.end();
+  }
+
+  // Poll IPC for follow-up messages and _close sentinel during the query.
+  // Scheduled tasks are one-shot and don't receive follow-up messages,
+  // so skip IPC polling to avoid consuming messages meant for the conversation container.
+  let ipcPolling = !containerInput.isScheduledTask;
   let closedDuringQuery = false;
   const pollIpcDuringQuery = () => {
     if (!ipcPolling) return;
@@ -383,7 +391,9 @@ async function runQuery(
     }
     setTimeout(pollIpcDuringQuery, IPC_POLL_MS);
   };
-  setTimeout(pollIpcDuringQuery, IPC_POLL_MS);
+  if (ipcPolling) {
+    setTimeout(pollIpcDuringQuery, IPC_POLL_MS);
+  }
 
   let newSessionId: string | undefined;
   let lastAssistantUuid: string | undefined;
@@ -553,6 +563,13 @@ async function main(): Promise<void> {
       // idle timer and cause a 30-min delay before the next _close).
       if (queryResult.closedDuringQuery) {
         log('Close sentinel consumed during query, exiting');
+        break;
+      }
+
+      // Scheduled tasks are one-shot: exit immediately after the query
+      // completes instead of waiting for follow-up IPC messages.
+      if (containerInput.isScheduledTask) {
+        log('Scheduled task completed, exiting (one-shot mode)');
         break;
       }
 
