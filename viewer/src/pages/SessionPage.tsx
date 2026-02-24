@@ -5,7 +5,7 @@ import { MessageSquare, Clock, ArrowLeft } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useApp } from "../components/ThemeProvider";
 import { ConversationList } from "../features/conversation/ConversationList";
-import type { SessionMeta, ConversationEntry, ToolResultBlock } from "../shared/types";
+import type { SessionMeta, ConversationEntry, ToolResultBlock, SubagentConversation } from "../shared/types";
 
 export function SessionPage() {
   const { projectId } = useParams<{ projectId: string }>();
@@ -14,16 +14,27 @@ export function SessionPage() {
   const { t } = useApp();
   const contentRef = useRef<HTMLDivElement>(null);
 
+  const prevEntryCountRef = useRef(0);
+  const isNearBottomRef = useRef(true);
+
+  // Reset scroll state when switching sessions
+  useEffect(() => {
+    prevEntryCountRef.current = 0;
+    isNearBottomRef.current = true;
+  }, [selectedSession]);
+
   const { data: sessions, isLoading: sessionsLoading } = useQuery<
     SessionMeta[]
   >({
     queryKey: ["sessions", projectId],
     queryFn: () => fetch(`/api/projects/${projectId}`).then((r) => r.json()),
+    refetchInterval: 5000,
   });
 
   const { data: sessionData, isLoading: sessionLoading } = useQuery<{
     entries: ConversationEntry[];
     toolResults: Record<string, ToolResultBlock>;
+    subagents: Record<string, SubagentConversation>;
   }>({
     queryKey: ["session", projectId, selectedSession],
     queryFn: () =>
@@ -31,11 +42,29 @@ export function SessionPage() {
         `/api/projects/${projectId}/sessions/${selectedSession}`,
       ).then((r) => r.json()),
     enabled: !!selectedSession,
+    refetchInterval: 3000,
   });
 
-  // Auto-scroll to the end of the conversation when data loads
+  // Track whether the user is near the bottom of the scroll container
   useEffect(() => {
-    if (sessionData && contentRef.current) {
+    const el = contentRef.current;
+    if (!el) return;
+    const onScroll = () => {
+      isNearBottomRef.current =
+        el.scrollHeight - el.scrollTop - el.clientHeight < 100;
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+  }, []);
+
+  // Auto-scroll: on first load jump to bottom; on updates only if near bottom
+  useEffect(() => {
+    if (!sessionData || !contentRef.current) return;
+    const count = sessionData.entries.length;
+    const isFirstLoad = prevEntryCountRef.current === 0;
+    prevEntryCountRef.current = count;
+
+    if (isFirstLoad || isNearBottomRef.current) {
       contentRef.current.scrollTop = contentRef.current.scrollHeight;
     }
   }, [sessionData]);
@@ -119,6 +148,7 @@ export function SessionPage() {
           <ConversationList
             entries={sessionData.entries}
             toolResults={sessionData.toolResults}
+            subagents={sessionData.subagents}
           />
         )}
       </div>

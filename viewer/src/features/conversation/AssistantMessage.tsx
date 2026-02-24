@@ -2,18 +2,31 @@ import type {
   ConversationEntry,
   ContentBlock,
   ToolResultBlock,
+  SubagentConversation,
 } from "../../shared/types";
 import { MarkdownContent } from "../../components/MarkdownContent";
 import { ThinkingBlock } from "./ThinkingBlock";
 import { ToolUseBlock } from "./ToolUseBlock";
+import { SubagentBlock } from "./SubagentBlock";
 import { useApp } from "../../components/ThemeProvider";
 
 interface Props {
   entry: ConversationEntry;
   toolResults: Record<string, ToolResultBlock>;
+  subagents?: Record<string, SubagentConversation>;
 }
 
-export function AssistantMessage({ entry, toolResults }: Props) {
+function extractAgentId(toolResult?: ToolResultBlock): string | null {
+  if (!toolResult) return null;
+  const text =
+    typeof toolResult.content === "string"
+      ? toolResult.content
+      : JSON.stringify(toolResult.content);
+  const match = text.match(/agentId:\s*([a-zA-Z0-9_-]+)/);
+  return match ? match[1] : null;
+}
+
+export function AssistantMessage({ entry, toolResults, subagents }: Props) {
   const { t } = useApp();
   const content = entry.message.content;
 
@@ -73,15 +86,34 @@ export function AssistantMessage({ entry, toolResults }: Props) {
         </div>
       )}
 
-      {toolUseBlocks.map((b) => (
-        <ToolUseBlock
-          key={b.id}
-          id={b.id}
-          name={b.name}
-          input={b.input}
-          toolResult={toolResults[b.id]}
-        />
-      ))}
+      {toolUseBlocks.map((b) => {
+        if (b.name === "Task" && subagents) {
+          const agentId = extractAgentId(toolResults[b.id]);
+          const subagent = agentId ? subagents[agentId] : null;
+          if (subagent) {
+            const description =
+              (b.input.description as string) ||
+              (b.input.prompt as string)?.slice(0, 80) ||
+              agentId || "unknown";
+            return (
+              <SubagentBlock
+                key={b.id}
+                description={description}
+                subagent={subagent}
+              />
+            );
+          }
+        }
+        return (
+          <ToolUseBlock
+            key={b.id}
+            id={b.id}
+            name={b.name}
+            input={b.input}
+            toolResult={toolResults[b.id]}
+          />
+        );
+      })}
     </div>
   );
 }

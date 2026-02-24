@@ -1,8 +1,8 @@
 import { readdir, stat } from "fs/promises";
 import path from "path";
-import type { SessionMeta } from "../shared/types.js";
+import type { SessionMeta, SubagentConversation } from "../shared/types.js";
 import { getProjectDir } from "./project-service.js";
-import { parseJsonlWithToolResults } from "./parse-jsonl.js";
+import { parseJsonlWithToolResults, parseSubagentJsonl } from "./parse-jsonl.js";
 
 export async function listSessions(projectId: string): Promise<SessionMeta[]> {
   const dir = getProjectDir(projectId);
@@ -69,5 +69,34 @@ export async function listSessions(projectId: string): Promise<SessionMeta[]> {
 export async function getSession(projectId: string, sessionId: string) {
   const dir = getProjectDir(projectId);
   const filePath = path.join(dir, `${sessionId}.jsonl`);
-  return parseJsonlWithToolResults(filePath);
+  const { entries, toolResults } = await parseJsonlWithToolResults(filePath);
+
+  // Scan for subagent conversations
+  const subagents: Record<string, SubagentConversation> = {};
+  const subagentsDir = path.join(dir, sessionId, "subagents");
+  try {
+    const files = await readdir(subagentsDir);
+    for (const f of files) {
+      if (!f.startsWith("agent-") || !f.endsWith(".jsonl")) continue;
+      const agentId = f.replace(/^agent-/, "").replace(/\.jsonl$/, "");
+      try {
+        const result = await parseSubagentJsonl(path.join(subagentsDir, f));
+        const toolResultsObj: Record<string, import("../shared/types.js").ToolResultBlock> = {};
+        for (const [k, v] of result.toolResults) {
+          toolResultsObj[k] = v;
+        }
+        subagents[agentId] = {
+          agentId,
+          entries: result.entries,
+          toolResults: toolResultsObj,
+        };
+      } catch {
+        // skip unreadable subagent files
+      }
+    }
+  } catch {
+    // no subagents directory — that's fine
+  }
+
+  return { entries, toolResults, subagents };
 }

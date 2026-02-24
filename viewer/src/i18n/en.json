@@ -19,6 +19,7 @@
   "conversation.summary": "Summary",
   "conversation.user": "User",
   "conversation.assistant": "Assistant",
+  "conversation.subagent": "Subagent",
   "conversation.collapsed": "Click to expand",
   "loading": "Loading...",
   "error": "Error loading data"

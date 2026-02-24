@@ -19,6 +19,7 @@
   "conversation.summary": "摘要",
   "conversation.user": "用户",
   "conversation.assistant": "助手",
+  "conversation.subagent": "子代理",
   "conversation.collapsed": "点击展开",
   "loading": "加载中...",
   "error": "数据加载失败"

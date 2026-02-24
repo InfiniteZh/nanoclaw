@@ -1,4 +1,4 @@
-import type { ConversationEntry, ToolResultBlock } from "../../shared/types";
+import type { ConversationEntry, ToolResultBlock, SubagentConversation } from "../../shared/types";
 import { UserMessage } from "./UserMessage";
 import { AssistantMessage } from "./AssistantMessage";
 import { SystemMessage } from "./SystemMessage";
@@ -7,9 +7,10 @@ import { useApp } from "../../components/ThemeProvider";
 interface Props {
   entries: ConversationEntry[];
   toolResults: Record<string, ToolResultBlock>;
+  subagents?: Record<string, SubagentConversation>;
 }
 
-export function ConversationList({ entries, toolResults }: Props) {
+export function ConversationList({ entries, toolResults, subagents }: Props) {
   const { t } = useApp();
 
   return (
@@ -24,6 +25,7 @@ export function ConversationList({ entries, toolResults }: Props) {
                 key={entry.uuid}
                 entry={entry}
                 toolResults={toolResults}
+                subagents={subagents}
               />
             );
           case "system":

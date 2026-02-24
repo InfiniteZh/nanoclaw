@@ -37,6 +37,13 @@ link_sessions() {
         fname=$(basename "$jsonl")
         ln -sf "$jsonl" "$target/$fname"
       done
+
+      # Symlink session subdirectories (contain subagents/)
+      for session_dir in "$proj_dir"*/; do
+        [ -d "$session_dir" ] || continue
+        dname=$(basename "$session_dir")
+        ln -sfn "$session_dir" "$target/$dname"
+      done
     done
   done
 

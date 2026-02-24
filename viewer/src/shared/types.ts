@@ -57,6 +57,12 @@ export interface ToolResultBlock {
   content: string | ContentBlock[];
 }
 
+export interface SubagentConversation {
+  agentId: string;
+  entries: ConversationEntry[];
+  toolResults: Record<string, ToolResultBlock>;
+}
+
 export interface ImageBlock {
   type: "image";
   source: {

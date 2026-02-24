@@ -19,13 +19,13 @@ api.get("/api/projects/:id/sessions/:sid", async (c) => {
   const id = c.req.param("id");
   const sid = c.req.param("sid");
   try {
-    const { entries, toolResults } = await getSession(id, sid);
+    const { entries, toolResults, subagents } = await getSession(id, sid);
     // Convert Map to plain object for JSON serialization
     const toolResultsObj: Record<string, unknown> = {};
     for (const [k, v] of toolResults) {
       toolResultsObj[k] = v;
     }
-    return c.json({ entries, toolResults: toolResultsObj });
+    return c.json({ entries, toolResults: toolResultsObj, subagents });
   } catch {
     return c.json({ error: "Session not found" }, 404);
   }
