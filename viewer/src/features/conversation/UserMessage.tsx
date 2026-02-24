@@ -29,7 +29,7 @@ export function UserMessage({ entry }: Props) {
             {new Date(entry.timestamp).toLocaleTimeString()}
           </span>
         </div>
-        <div className="bg-(--color-user-bubble) text-(--color-user-text) rounded-2xl rounded-tr-sm px-4 py-2.5">
+        <div className="user-bubble-content bg-(--color-user-bubble) text-(--color-user-text) rounded-2xl rounded-tr-sm px-4 py-2.5">
           <MarkdownContent content={textContent} />
         </div>
       </div>

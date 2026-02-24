@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useParams, useSearchParams } from "react-router-dom";
 import { MessageSquare, Clock, ArrowLeft } from "lucide-react";
@@ -11,6 +12,7 @@ export function SessionPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const selectedSession = searchParams.get("session");
   const { t } = useApp();
+  const contentRef = useRef<HTMLDivElement>(null);
 
   const { data: sessions, isLoading: sessionsLoading } = useQuery<
     SessionMeta[]
@@ -30,6 +32,13 @@ export function SessionPage() {
       ).then((r) => r.json()),
     enabled: !!selectedSession,
   });
+
+  // Auto-scroll to the end of the conversation when data loads
+  useEffect(() => {
+    if (sessionData && contentRef.current) {
+      contentRef.current.scrollTop = contentRef.current.scrollHeight;
+    }
+  }, [sessionData]);
 
   return (
     <div className="flex h-[calc(100vh-3.5rem)]">
@@ -93,7 +102,7 @@ export function SessionPage() {
       </div>
 
       {/* Main content */}
-      <div className="flex-1 overflow-y-auto">
+      <div ref={contentRef} className="flex-1 overflow-y-auto">
         {!selectedSession && (
           <div className="flex items-center justify-center h-full text-(--color-text-secondary)">
             {t("session.selectSession")}
