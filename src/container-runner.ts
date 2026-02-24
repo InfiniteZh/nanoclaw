@@ -119,8 +119,12 @@ function buildVolumeMounts(
     'ANTHROPIC_REASONING_MODEL',
     'CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC',
   ]);
+  // Scan skills for required env vars declared in SKILL.md frontmatter
+  // (metadata.requires.env). This lets new skills declare deps without code changes.
+  const skillEnv = readSkillEnvRequirements();
   const settingsEnv: Record<string, string> = {
     ...anthropicEnv,
+    ...skillEnv,
     // Enable agent swarms (subagent orchestration)
     CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: '1',
     // Load CLAUDE.md from additional mounted directories
@@ -194,6 +198,46 @@ function buildVolumeMounts(
   }
 
   return mounts;
+}
+
+/**
+ * Scan all skill SKILL.md files for `requires.env` in frontmatter metadata,
+ * then read those env var values from .env.
+ *
+ * Frontmatter format:
+ *   metadata: {"requires":{"env":["SOME_API_KEY"]}}
+ */
+function readSkillEnvRequirements(): Record<string, string> {
+  const skillsDir = path.join(process.cwd(), 'container', 'skills');
+  if (!fs.existsSync(skillsDir)) return {};
+
+  const requiredKeys: string[] = [];
+  for (const entry of fs.readdirSync(skillsDir, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const skillMd = path.join(skillsDir, entry.name, 'SKILL.md');
+    if (!fs.existsSync(skillMd)) continue;
+
+    const content = fs.readFileSync(skillMd, 'utf-8');
+    // Extract YAML frontmatter between --- delimiters
+    const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
+    if (!fmMatch) continue;
+
+    // Find metadata line and parse its JSON value
+    const metaMatch = fmMatch[1].match(/^metadata:\s*(.+)$/m);
+    if (!metaMatch) continue;
+    try {
+      const meta = JSON.parse(metaMatch[1]);
+      const envKeys = meta?.requires?.env ?? meta?.clawdbot?.requires?.env;
+      if (Array.isArray(envKeys)) {
+        requiredKeys.push(...envKeys);
+      }
+    } catch {
+      // Skip malformed metadata
+    }
+  }
+
+  if (requiredKeys.length === 0) return {};
+  return readEnvFile([...new Set(requiredKeys)]);
 }
 
 /**
