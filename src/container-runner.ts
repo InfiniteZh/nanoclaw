@@ -132,21 +132,18 @@ function buildVolumeMounts(
   // Always rewrite so .env changes take effect on next container spawn
   fs.writeFileSync(settingsFile, JSON.stringify({ env: settingsEnv }, null, 2) + '\n');
 
-  // Sync MCP server config from container/config/mcporter.json into .claude/.mcp.json
+  // Sync mcporter config so `npx mcporter` can find it inside the container.
+  // mcporter looks for system config at ~/.mcporter/mcporter.json
   const mcpConfigSrc = path.join(process.cwd(), 'container', 'config', 'mcporter.json');
   if (fs.existsSync(mcpConfigSrc)) {
-    const mcpConfig = JSON.parse(fs.readFileSync(mcpConfigSrc, 'utf-8'));
-    // Transform to Claude Code .mcp.json format (url-based servers use streamable-http type)
-    const mcpOut: Record<string, any> = { mcpServers: {} };
-    for (const [name, server] of Object.entries(mcpConfig.mcpServers || {})) {
-      const s = server as any;
-      mcpOut.mcpServers[name] = {
-        url: s.url,
-        type: 'streamable-http',
-      };
-    }
-    const mcpFile = path.join(groupSessionsDir, '.mcp.json');
-    fs.writeFileSync(mcpFile, JSON.stringify(mcpOut, null, 2) + '\n');
+    const mcporterDir = path.join(DATA_DIR, 'sessions', 'mcporter');
+    fs.mkdirSync(mcporterDir, { recursive: true });
+    fs.copyFileSync(mcpConfigSrc, path.join(mcporterDir, 'mcporter.json'));
+    mounts.push({
+      hostPath: mcporterDir,
+      containerPath: '/home/node/.mcporter',
+      readonly: false,
+    });
   }
 
   mounts.push({
