@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, type ReactNode } from "react";
 import { Link } from "react-router-dom";
-import { Settings, Sun, Moon, Monitor, Globe, FolderOpen } from "lucide-react";
+import { Settings, Sun, Moon, Monitor, Globe, FolderOpen, ListTodo } from "lucide-react";
 import { useApp } from "./ThemeProvider";
 import type { Locale } from "../hooks/useLocale";
 
@@ -12,7 +12,6 @@ const THEMES = [
 
 const LANGUAGES: { value: Locale; label: string }[] = [
   { value: "en", label: "English" },
-  { value: "ja", label: "日本語" },
   { value: "zh_CN", label: "中文" },
 ];
 
@@ -35,13 +34,22 @@ export function Layout({ children }: { children: ReactNode }) {
     <div className="min-h-screen bg-(--color-bg-primary) text-(--color-text-primary)">
       <header className="sticky top-0 z-50 border-b border-(--color-border) bg-(--color-bg-primary)/80 backdrop-blur">
         <div className="flex items-center justify-between px-4 h-14">
-          <Link
-            to="/projects"
-            className="flex items-center gap-2 font-semibold text-lg hover:text-(--color-accent) transition-colors"
-          >
-            <FolderOpen className="w-5 h-5" />
-            {t("app.title")}
-          </Link>
+          <div className="flex items-center gap-4">
+            <Link
+              to="/projects"
+              className="flex items-center gap-2 font-semibold text-lg hover:text-(--color-accent) transition-colors"
+            >
+              <FolderOpen className="w-5 h-5" />
+              {t("app.title")}
+            </Link>
+            <Link
+              to="/tasks"
+              className="flex items-center gap-1.5 text-sm text-(--color-text-secondary) hover:text-(--color-accent) transition-colors"
+            >
+              <ListTodo className="w-4 h-4" />
+              {t("nav.tasks")}
+            </Link>
+          </div>
 
           <div className="relative" ref={ref}>
             <button

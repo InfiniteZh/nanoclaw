@@ -4,6 +4,7 @@ import { AppProvider } from "./components/ThemeProvider";
 import { Layout } from "./components/Layout";
 import { ProjectListPage } from "./pages/ProjectListPage";
 import { SessionPage } from "./pages/SessionPage";
+import { TasksPage } from "./pages/TasksPage";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -23,6 +24,7 @@ export function App() {
             <Routes>
               <Route path="/projects" element={<ProjectListPage />} />
               <Route path="/projects/:projectId" element={<SessionPage />} />
+              <Route path="/tasks" element={<TasksPage />} />
               <Route path="*" element={<Navigate to="/projects" replace />} />
             </Routes>
           </Layout>

@@ -1,13 +1,11 @@
 import { useState, useCallback, useMemo } from "react";
 import en from "../i18n/en.json";
-import ja from "../i18n/ja.json";
 import zh_CN from "../i18n/zh_CN.json";
 
-export type Locale = "en" | "ja" | "zh_CN";
+export type Locale = "en" | "zh_CN";
 
 const messages: Record<Locale, Record<string, string>> = {
   en,
-  ja,
   zh_CN,
 };
 

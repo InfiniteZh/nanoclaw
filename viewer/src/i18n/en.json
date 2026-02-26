@@ -1,6 +1,7 @@
 {
   "app.title": "NanoClaw Viewer",
   "nav.projects": "Projects",
+  "nav.tasks": "Tasks",
   "settings.theme": "Theme",
   "settings.language": "Language",
   "theme.light": "Light",
@@ -12,6 +13,10 @@
   "session.noSessions": "No sessions found",
   "session.selectSession": "Select a session to view",
   "session.messages": "messages",
+  "task.noTasks": "No tasks found",
+  "task.sessions": "sessions",
+  "task.selectTask": "Select a task to view",
+  "task.selectSession": "Select a session to view",
   "conversation.thinking": "Thinking",
   "conversation.toolUse": "Tool",
   "conversation.result": "Result",

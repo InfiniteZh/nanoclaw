@@ -128,19 +128,47 @@ export class FeishuChannel implements Channel {
     const replyToId = this.replyTargetId.get(jid);
     if (replyToId) this.replyTargetId.delete(jid);
 
+    // Check if agent output is already a JSON 2.0 card — passthrough directly
+    const card = this.tryParseCard(text);
+    if (card) {
+      const content = JSON.stringify(card);
+      try {
+        if (replyToId) {
+          await this.client.im.message.reply({
+            path: { message_id: replyToId },
+            data: { msg_type: 'interactive', content },
+          });
+          await this.setTyping(jid, false);
+        } else {
+          await this.client.im.message.create({
+            data: { receive_id: rawId, msg_type: 'interactive', content },
+            params: { receive_id_type: receiveIdType },
+          });
+        }
+        logger.info({ jid }, 'Feishu JSON 2.0 card passthrough sent');
+      } catch (err) {
+        this.outgoingQueue.push({ jid, text });
+        logger.warn({ jid, err }, 'Failed to send Feishu card passthrough, queued');
+      }
+      return;
+    }
+
     const feishuText = this.toFeishuMarkdown(text);
     const chunks = this.splitMessage(feishuText, MAX_MESSAGE_LENGTH);
     for (let i = 0; i < chunks.length; i++) {
       const chunk = chunks[i];
       try {
-        // Send as interactive card with markdown for rich text rendering
+        // Send as interactive card with markdown (JSON 2.0) for rich text rendering
         const content = JSON.stringify({
-          elements: [
-            {
-              tag: 'markdown',
-              content: chunk,
-            },
-          ],
+          schema: '2.0',
+          body: {
+            elements: [
+              {
+                tag: 'markdown',
+                content: chunk,
+              },
+            ],
+          },
         });
 
         if (i === 0 && replyToId) {
@@ -420,44 +448,33 @@ export class FeishuChannel implements Channel {
   }
 
   /**
-   * Convert standard markdown to Feishu card markdown (JSON 1.0 subset).
-   * Handles incompatibilities automatically so the agent doesn't need to know Feishu specifics.
+   * Convert standard markdown to Feishu card markdown (JSON 2.0).
+   * JSON 2.0 natively supports # headers and > blockquotes, so minimal conversion needed.
    */
   private toFeishuMarkdown(text: string): string {
-    const lines = text.split('\n');
-    const result: string[] = [];
-    let inCodeBlock = false;
+    return text;
+  }
 
-    for (const line of lines) {
-      // Don't transform content inside code blocks
-      if (line.trimStart().startsWith('```')) {
-        inCodeBlock = !inCodeBlock;
-        result.push(line);
-        continue;
+  /**
+   * Try to parse text as a JSON 2.0 card. Returns the parsed card object if valid, null otherwise.
+   */
+  private tryParseCard(text: string): Record<string, unknown> | null {
+    const trimmed = text.trim();
+    if (!trimmed.startsWith('{')) return null;
+    try {
+      const obj = JSON.parse(trimmed) as Record<string, unknown>;
+      if (
+        obj.schema === '2.0' &&
+        obj.body &&
+        typeof obj.body === 'object' &&
+        Array.isArray((obj.body as Record<string, unknown>).elements)
+      ) {
+        return obj;
       }
-      if (inCodeBlock) {
-        result.push(line);
-        continue;
-      }
-
-      // Convert markdown headers to bold text (Feishu JSON 1.0 doesn't support # headers)
-      const headerMatch = line.match(/^(#{1,6})\s+(.+)$/);
-      if (headerMatch) {
-        result.push(`**${headerMatch[2]}**`);
-        continue;
-      }
-
-      // Convert blockquotes to indented italic (Feishu JSON 1.0 doesn't support >)
-      const quoteMatch = line.match(/^>\s?(.*)$/);
-      if (quoteMatch) {
-        result.push(`*${quoteMatch[1] || ''}*`);
-        continue;
-      }
-
-      result.push(line);
+    } catch {
+      // Not valid JSON, fall through
     }
-
-    return result.join('\n');
+    return null;
   }
 
   private splitMessage(text: string, maxLength: number): string[] {
