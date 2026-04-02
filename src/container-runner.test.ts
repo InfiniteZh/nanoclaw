@@ -1,6 +1,12 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { EventEmitter } from 'events';
 import { PassThrough } from 'stream';
+import { spawn } from 'child_process';
+
+const { readEnvFileMock, onecliApplyContainerConfigMock } = vi.hoisted(() => ({
+  readEnvFileMock: vi.fn(() => ({})),
+  onecliApplyContainerConfigMock: vi.fn().mockResolvedValue(true),
+}));
 
 // Sentinel markers must match container-runner.ts
 const OUTPUT_START_MARKER = '---NANOCLAW_OUTPUT_START---';
@@ -26,6 +32,10 @@ vi.mock('./logger.js', () => ({
     warn: vi.fn(),
     error: vi.fn(),
   },
+}));
+
+vi.mock('./env.js', () => ({
+  readEnvFile: readEnvFileMock,
 }));
 
 // Mock fs
@@ -62,7 +72,7 @@ vi.mock('./container-runtime.js', () => ({
 // Mock OneCLI SDK
 vi.mock('@onecli-sh/sdk', () => ({
   OneCLI: class {
-    applyContainerConfig = vi.fn().mockResolvedValue(true);
+    applyContainerConfig = onecliApplyContainerConfigMock;
     createAgent = vi.fn().mockResolvedValue({ id: 'test' });
     ensureAgent = vi
       .fn()
@@ -134,6 +144,9 @@ describe('container-runner timeout behavior', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     fakeProc = createFakeProcess();
+    vi.clearAllMocks();
+    readEnvFileMock.mockReturnValue({});
+    onecliApplyContainerConfigMock.mockResolvedValue(true);
   });
 
   afterEach(() => {
@@ -225,5 +238,63 @@ describe('container-runner timeout behavior', () => {
     const result = await resultPromise;
     expect(result.status).toBe('success');
     expect(result.newSessionId).toBe('session-456');
+  });
+
+  it('passes .env auth credentials into the container when OneCLI is unavailable', async () => {
+    onecliApplyContainerConfigMock.mockResolvedValue(false);
+    readEnvFileMock.mockReturnValue({
+      ANTHROPIC_AUTH_TOKEN: 'auth-token-from-env',
+      ANTHROPIC_BASE_URL: 'https://anthropic-proxy.example.com',
+    });
+
+    const resultPromise = runContainerAgent(testGroup, testInput, () => {});
+    await vi.advanceTimersByTimeAsync(0);
+
+    const spawnArgs = vi.mocked(spawn).mock.calls[0]?.[1];
+    expect(spawnArgs).toBeDefined();
+    expect(spawnArgs).toContain('-e');
+    expect(spawnArgs).toContain('ANTHROPIC_AUTH_TOKEN=auth-token-from-env');
+    expect(spawnArgs).toContain('-e');
+    expect(spawnArgs).toContain(
+      'ANTHROPIC_BASE_URL=https://anthropic-proxy.example.com',
+    );
+
+    emitOutputMarker(fakeProc, {
+      status: 'success',
+      result: 'ok',
+      newSessionId: 'session-auth',
+    });
+    await vi.advanceTimersByTimeAsync(10);
+    fakeProc.emit('close', 0);
+    await vi.advanceTimersByTimeAsync(10);
+
+    const result = await resultPromise;
+    expect(result.status).toBe('success');
+  });
+
+  it('passes model configuration into the container from .env', async () => {
+    readEnvFileMock.mockReturnValue({
+      ANTHROPIC_MODEL: 'glm-5',
+    });
+
+    const resultPromise = runContainerAgent(testGroup, testInput, () => {});
+    await vi.advanceTimersByTimeAsync(0);
+
+    const spawnArgs = vi.mocked(spawn).mock.calls[0]?.[1];
+    expect(spawnArgs).toBeDefined();
+    expect(spawnArgs).toContain('-e');
+    expect(spawnArgs).toContain('ANTHROPIC_MODEL=glm-5');
+
+    emitOutputMarker(fakeProc, {
+      status: 'success',
+      result: 'ok',
+      newSessionId: 'session-model',
+    });
+    await vi.advanceTimersByTimeAsync(10);
+    fakeProc.emit('close', 0);
+    await vi.advanceTimersByTimeAsync(10);
+
+    const result = await resultPromise;
+    expect(result.status).toBe('success');
   });
 });

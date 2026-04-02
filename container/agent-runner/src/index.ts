@@ -439,6 +439,7 @@ async function runQuery(
     prompt: stream,
     options: {
       cwd: '/workspace/group',
+      model: resolveConfiguredModel(sdkEnv),
       additionalDirectories: extraDirs.length > 0 ? extraDirs : undefined,
       resume: sessionId,
       resumeSessionAt: resumeAt,
@@ -550,6 +551,12 @@ interface ScriptResult {
 }
 
 const SCRIPT_TIMEOUT_MS = 30_000;
+
+function resolveConfiguredModel(
+  env: Record<string, string | undefined>,
+): string | undefined {
+  return env.ANTHROPIC_MODEL;
+}
 
 async function runScript(script: string): Promise<ScriptResult | null> {
   const scriptPath = '/tmp/task-script.sh';

@@ -16,6 +16,7 @@ import {
   ONECLI_URL,
   TIMEZONE,
 } from './config.js';
+import { readEnvFile } from './env.js';
 import { resolveGroupFolderPath, resolveGroupIpcPath } from './group-folder.js';
 import { logger } from './logger.js';
 import {
@@ -56,6 +57,27 @@ interface VolumeMount {
   hostPath: string;
   containerPath: string;
   readonly: boolean;
+}
+
+function getContainerCredentialEnv(): Record<string, string> {
+  const envFile = readEnvFile([
+    'ANTHROPIC_AUTH_TOKEN',
+    'ANTHROPIC_BASE_URL',
+    'ANTHROPIC_MODEL',
+  ]);
+
+  const entries = [
+    ['ANTHROPIC_AUTH_TOKEN', process.env.ANTHROPIC_AUTH_TOKEN],
+    ['ANTHROPIC_BASE_URL', process.env.ANTHROPIC_BASE_URL],
+    ['ANTHROPIC_MODEL', process.env.ANTHROPIC_MODEL],
+  ] as const;
+
+  const result: Record<string, string> = {};
+  for (const [key, processValue] of entries) {
+    const value = processValue || envFile[key];
+    if (value) result[key] = value;
+  }
+  return result;
 }
 
 function buildVolumeMounts(
@@ -233,8 +255,14 @@ async function buildContainerArgs(
   // Pass host timezone so container's local time matches the user's
   args.push('-e', `TZ=${TIMEZONE}`);
 
+  for (const [key, value] of Object.entries(getContainerCredentialEnv())) {
+    args.push('-e', `${key}=${value}`);
+  }
+
   // OneCLI gateway handles credential injection — containers never see real secrets.
   // The gateway intercepts HTTPS traffic and injects API keys or OAuth tokens.
+  // When OneCLI is unavailable, direct auth env vars still allow local setups
+  // that intentionally keep credentials in .env.
   const onecliApplied = await onecli.applyContainerConfig(args, {
     addHostMapping: false, // Nanoclaw already handles host gateway
     agent: agentIdentifier,
