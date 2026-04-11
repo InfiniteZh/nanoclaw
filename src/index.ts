@@ -145,6 +145,7 @@ function saveState(): void {
 export interface StreamForwardState {
   streamStarted: boolean;
   outputSentToUser: boolean;
+  lastAssistantStreamText?: string;
 }
 
 export async function forwardContainerOutputToChannel(
@@ -156,17 +157,28 @@ export async function forwardContainerOutputToChannel(
   result: ContainerOutput,
   state: StreamForwardState,
 ): Promise<void> {
+  const supportsStreaming =
+    typeof channel.sendStreamStart === 'function' &&
+    typeof channel.sendStreamStep === 'function' &&
+    typeof channel.sendStreamEnd === 'function';
+
   if (result.stepType && result.stepContent && result.stepNumber) {
-    if (!state.streamStarted) {
+    if (supportsStreaming && !state.streamStarted) {
       channel.sendStreamStart?.(chatJid);
       state.streamStarted = true;
     }
 
-    channel.sendStreamStep?.(chatJid, {
-      stepNumber: result.stepNumber,
-      stepType: result.stepType,
-      content: result.stepContent,
-    });
+    if (result.stepType === 'assistant_text') {
+      state.lastAssistantStreamText = result.stepContent.trim();
+    }
+
+    if (supportsStreaming) {
+      channel.sendStreamStep?.(chatJid, {
+        stepNumber: result.stepNumber,
+        stepType: result.stepType,
+        content: result.stepContent,
+      });
+    }
     return;
   }
 
@@ -177,15 +189,27 @@ export async function forwardContainerOutputToChannel(
         : JSON.stringify(result.result);
     const text = raw.replace(/<internal>[\s\S]*?<\/internal>/g, '').trim();
     if (text) {
+      if (
+        supportsStreaming &&
+        state.lastAssistantStreamText &&
+        state.lastAssistantStreamText === text
+      ) {
+        channel.sendStreamEnd?.(chatJid);
+        state.streamStarted = false;
+        state.outputSentToUser = true;
+        return;
+      }
       await channel.sendMessage(chatJid, text);
       state.outputSentToUser = true;
       state.streamStarted = false;
+      state.lastAssistantStreamText = text;
     }
     return;
   }
 
   if (
     result.status === 'success' &&
+    supportsStreaming &&
     state.streamStarted &&
     !state.outputSentToUser
   ) {

@@ -62,25 +62,103 @@ interface VolumeMount {
   readonly: boolean;
 }
 
-function getContainerCredentialEnv(): Record<string, string> {
-  const envFile = readEnvFile([
-    'ANTHROPIC_AUTH_TOKEN',
-    'ANTHROPIC_BASE_URL',
-    'ANTHROPIC_MODEL',
-  ]);
+const CONTAINER_ENV_KEYS = [
+  'ANTHROPIC_AUTH_TOKEN',
+  'ANTHROPIC_BASE_URL',
+  'ANTHROPIC_MODEL',
+  'SERPAPI_API_KEY',
+  'TAVILY_API_KEY',
+  'MINIMAX_API_KEY',
+  'MINIMAX_API_HOST',
+] as const;
 
-  const entries = [
-    ['ANTHROPIC_AUTH_TOKEN', process.env.ANTHROPIC_AUTH_TOKEN],
-    ['ANTHROPIC_BASE_URL', process.env.ANTHROPIC_BASE_URL],
-    ['ANTHROPIC_MODEL', process.env.ANTHROPIC_MODEL],
-  ] as const;
+const GROUP_SETTINGS_ENV = {
+  // Enable agent swarms (subagent orchestration)
+  // https://code.claude.com/docs/en/agent-teams#orchestrate-teams-of-claude-code-sessions
+  CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: '1',
+  // Load CLAUDE.md from additional mounted directories
+  // https://code.claude.com/docs/en/memory#load-memory-from-additional-directories
+  CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD: '1',
+  // Enable Claude's memory feature (persists user preferences between sessions)
+  // https://code.claude.com/docs/en/memory#manage-auto-memory
+  CLAUDE_CODE_DISABLE_AUTO_MEMORY: '0',
+} as const;
+
+function getMiniMaxMcpConfig() {
+  const envFile = readEnvFile(['MINIMAX_API_KEY', 'MINIMAX_API_HOST']);
+
+  return {
+    command: 'uvx',
+    args: ['minimax-coding-plan-mcp', '-y'],
+    env: {
+      MINIMAX_API_KEY:
+        process.env.MINIMAX_API_KEY || envFile.MINIMAX_API_KEY || '',
+      MINIMAX_API_HOST:
+        process.env.MINIMAX_API_HOST || envFile.MINIMAX_API_HOST || '',
+    },
+  } as const;
+}
+
+function getContainerCredentialEnv(): Record<string, string> {
+  const envFile = readEnvFile([...CONTAINER_ENV_KEYS]);
 
   const result: Record<string, string> = {};
-  for (const [key, processValue] of entries) {
-    const value = processValue || envFile[key];
+  for (const key of CONTAINER_ENV_KEYS) {
+    const value = process.env[key] || envFile[key];
     if (value) result[key] = value;
   }
   return result;
+}
+
+function ensureGroupClaudeSettings(groupSessionsDir: string): void {
+  const settingsFile = path.join(groupSessionsDir, 'settings.json');
+
+  let existingSettings: Record<string, unknown> = {};
+  if (fs.existsSync(settingsFile)) {
+    try {
+      const raw = fs.readFileSync(settingsFile, 'utf-8');
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object') {
+        existingSettings = parsed as Record<string, unknown>;
+      }
+    } catch (err) {
+      logger.warn(
+        { err, settingsFile },
+        'Failed to parse existing group settings, recreating defaults',
+      );
+    }
+  }
+
+  const existingEnv =
+    existingSettings.env &&
+    typeof existingSettings.env === 'object' &&
+    !Array.isArray(existingSettings.env)
+      ? (existingSettings.env as Record<string, string>)
+      : {};
+
+  const existingMcpServers =
+    existingSettings.mcpServers &&
+    typeof existingSettings.mcpServers === 'object' &&
+    !Array.isArray(existingSettings.mcpServers)
+      ? (existingSettings.mcpServers as Record<string, unknown>)
+      : {};
+
+  const mergedSettings = {
+    ...existingSettings,
+    env: {
+      ...existingEnv,
+      ...GROUP_SETTINGS_ENV,
+    },
+    mcpServers: {
+      ...existingMcpServers,
+      MiniMax: getMiniMaxMcpConfig(),
+    },
+  };
+
+  fs.writeFileSync(
+    settingsFile,
+    JSON.stringify(mergedSettings, null, 2) + '\n',
+  );
 }
 
 function buildVolumeMounts(
@@ -140,6 +218,23 @@ function buildVolumeMounts(
     }
   }
 
+  // Mount mcporter.json for HTTP MCP servers (AKTools, TrendRadar)
+  // All groups get this since mcporter is available in the container
+  const mcporterConfigSrc = path.join(
+    projectRoot,
+    'container',
+    'config',
+    'mcporter.json',
+  );
+  const mcporterConfigDstDir = path.join(groupDir, 'config');
+  if (fs.existsSync(mcporterConfigSrc)) {
+    fs.mkdirSync(mcporterConfigDstDir, { recursive: true });
+    fs.copyFileSync(
+      mcporterConfigSrc,
+      path.join(mcporterConfigDstDir, 'mcporter.json'),
+    );
+  }
+
   // Per-group Claude sessions directory (isolated from other groups)
   // Each group gets their own .claude/ to prevent cross-group session access
   const groupSessionsDir = path.join(
@@ -149,29 +244,7 @@ function buildVolumeMounts(
     '.claude',
   );
   fs.mkdirSync(groupSessionsDir, { recursive: true });
-  const settingsFile = path.join(groupSessionsDir, 'settings.json');
-  if (!fs.existsSync(settingsFile)) {
-    fs.writeFileSync(
-      settingsFile,
-      JSON.stringify(
-        {
-          env: {
-            // Enable agent swarms (subagent orchestration)
-            // https://code.claude.com/docs/en/agent-teams#orchestrate-teams-of-claude-code-sessions
-            CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: '1',
-            // Load CLAUDE.md from additional mounted directories
-            // https://code.claude.com/docs/en/memory#load-memory-from-additional-directories
-            CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD: '1',
-            // Enable Claude's memory feature (persists user preferences between sessions)
-            // https://code.claude.com/docs/en/memory#manage-auto-memory
-            CLAUDE_CODE_DISABLE_AUTO_MEMORY: '0',
-          },
-        },
-        null,
-        2,
-      ) + '\n',
-    );
-  }
+  ensureGroupClaudeSettings(groupSessionsDir);
 
   // Sync skills from container/skills/ into each group's .claude/skills/
   const skillsSrc = path.join(process.cwd(), 'container', 'skills');

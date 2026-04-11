@@ -117,6 +117,7 @@ vi.mock('child_process', async () => {
 
 import { runContainerAgent, ContainerOutput } from './container-runner.js';
 import type { RegisteredGroup } from './types.js';
+import fs from 'fs';
 
 const testGroup: RegisteredGroup = {
   name: 'Test Group',
@@ -151,6 +152,8 @@ describe('container-runner timeout behavior', () => {
 
   afterEach(() => {
     vi.useRealTimers();
+    delete process.env.MINIMAX_API_KEY;
+    delete process.env.MINIMAX_API_HOST;
   });
 
   it('timeout after output resolves as success', async () => {
@@ -322,6 +325,144 @@ describe('container-runner timeout behavior', () => {
       status: 'success',
       result: 'ok',
       newSessionId: 'session-model',
+    });
+    await vi.advanceTimersByTimeAsync(10);
+    fakeProc.emit('close', 0);
+    await vi.advanceTimersByTimeAsync(10);
+
+    const result = await resultPromise;
+    expect(result.status).toBe('success');
+  });
+
+  it('passes approved tool API keys into the container from .env', async () => {
+    readEnvFileMock.mockReturnValue({
+      SERPAPI_API_KEY: 'serp-key',
+      TAVILY_API_KEY: 'tavily-key',
+      MINIMAX_API_KEY: 'minimax-key',
+      MINIMAX_API_HOST: 'https://api.minimaxi.com',
+    });
+
+    const resultPromise = runContainerAgent(testGroup, testInput, () => {});
+    await vi.advanceTimersByTimeAsync(0);
+
+    const spawnArgs = vi.mocked(spawn).mock.calls[0]?.[1];
+    expect(spawnArgs).toBeDefined();
+    expect(spawnArgs).toContain('SERPAPI_API_KEY=serp-key');
+    expect(spawnArgs).toContain('TAVILY_API_KEY=tavily-key');
+    expect(spawnArgs).toContain('MINIMAX_API_KEY=minimax-key');
+    expect(spawnArgs).toContain('MINIMAX_API_HOST=https://api.minimaxi.com');
+
+    emitOutputMarker(fakeProc, {
+      status: 'success',
+      result: 'ok',
+      newSessionId: 'session-tools',
+    });
+    await vi.advanceTimersByTimeAsync(10);
+    fakeProc.emit('close', 0);
+    await vi.advanceTimersByTimeAsync(10);
+
+    const result = await resultPromise;
+    expect(result.status).toBe('success');
+  });
+
+  it('merges MiniMax MCP config into existing group settings', async () => {
+    readEnvFileMock.mockReturnValue({
+      MINIMAX_API_KEY: 'minimax-key',
+      MINIMAX_API_HOST: 'https://api.minimaxi.com',
+    });
+    vi.mocked(fs.existsSync).mockImplementation(
+      (filePath: fs.PathLike) =>
+        String(filePath) ===
+        '/tmp/nanoclaw-test-data/sessions/test-group/.claude/settings.json',
+    );
+    vi.mocked(fs.readFileSync).mockReturnValue(
+      JSON.stringify({
+        env: {
+          EXISTING_ENV: '1',
+        },
+        mcpServers: {
+          Existing: {
+            command: 'existing-command',
+          },
+        },
+      }),
+    );
+
+    const resultPromise = runContainerAgent(testGroup, testInput, () => {});
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(fs.writeFileSync).toHaveBeenCalled();
+    const settingsWrite = vi
+      .mocked(fs.writeFileSync)
+      .mock.calls.find(
+        ([filePath]) =>
+          String(filePath) ===
+          '/tmp/nanoclaw-test-data/sessions/test-group/.claude/settings.json',
+      );
+    expect(settingsWrite).toBeDefined();
+
+    const writtenJson = JSON.parse(String(settingsWrite?.[1]));
+    expect(writtenJson.env).toMatchObject({
+      EXISTING_ENV: '1',
+      CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: '1',
+      CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD: '1',
+      CLAUDE_CODE_DISABLE_AUTO_MEMORY: '0',
+    });
+    expect(writtenJson.mcpServers.Existing).toEqual({
+      command: 'existing-command',
+    });
+    expect(writtenJson.mcpServers.MiniMax).toEqual({
+      command: 'uvx',
+      args: ['minimax-coding-plan-mcp', '-y'],
+      env: {
+        MINIMAX_API_KEY: 'minimax-key',
+        MINIMAX_API_HOST: 'https://api.minimaxi.com',
+      },
+    });
+
+    emitOutputMarker(fakeProc, {
+      status: 'success',
+      result: 'ok',
+      newSessionId: 'session-settings',
+    });
+    await vi.advanceTimersByTimeAsync(10);
+    fakeProc.emit('close', 0);
+    await vi.advanceTimersByTimeAsync(10);
+
+    const result = await resultPromise;
+    expect(result.status).toBe('success');
+  });
+
+  it('prefers process env for MiniMax MCP server env when available', async () => {
+    process.env.MINIMAX_API_KEY = 'process-minimax-key';
+    process.env.MINIMAX_API_HOST = 'https://process.minimaxi.com';
+    readEnvFileMock.mockReturnValue({
+      MINIMAX_API_KEY: 'env-file-key',
+      MINIMAX_API_HOST: 'https://env-file.minimaxi.com',
+    });
+
+    const resultPromise = runContainerAgent(testGroup, testInput, () => {});
+    await vi.advanceTimersByTimeAsync(0);
+
+    const settingsWrite = vi
+      .mocked(fs.writeFileSync)
+      .mock.calls.find(
+        ([filePath]) =>
+          String(filePath) ===
+          '/tmp/nanoclaw-test-data/sessions/test-group/.claude/settings.json',
+      );
+    expect(settingsWrite).toBeDefined();
+
+    const writtenJson = JSON.parse(String(settingsWrite?.[1]));
+    expect(writtenJson.mcpServers.MiniMax.env).toEqual({
+      MINIMAX_API_KEY: 'process-minimax-key',
+      MINIMAX_API_HOST: 'https://process.minimaxi.com',
+    });
+
+    emitOutputMarker(fakeProc, {
+      status: 'success',
+      result: 'ok',
+      newSessionId: 'session-minimax-env',
     });
     await vi.advanceTimersByTimeAsync(10);
     fakeProc.emit('close', 0);

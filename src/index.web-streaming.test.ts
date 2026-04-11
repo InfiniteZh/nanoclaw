@@ -75,7 +75,11 @@ describe('forwardContainerOutputToChannel', () => {
       'final answer',
     );
     expect(channel.sendStreamEnd).not.toHaveBeenCalled();
-    expect(state).toEqual({ streamStarted: false, outputSentToUser: true });
+    expect(state).toEqual({
+      streamStarted: false,
+      outputSentToUser: true,
+      lastAssistantStreamText: 'final answer',
+    });
   });
 
   it('ends an active stream when the query completes without a final assistant message', async () => {
@@ -135,6 +139,98 @@ describe('forwardContainerOutputToChannel', () => {
       }),
     );
     expect(channel.sendMessage).not.toHaveBeenCalled();
-    expect(state).toEqual({ streamStarted: true, outputSentToUser: false });
+    expect(state).toEqual({
+      streamStarted: true,
+      outputSentToUser: false,
+      lastAssistantStreamText: '先检查一下当前配置，再继续调用工具。',
+    });
+  });
+
+  it('does not send a duplicate final assistant message when it matches the last streamed assistant text', async () => {
+    const channel = {
+      sendStreamStart: vi.fn(),
+      sendStreamStep: vi.fn(),
+      sendStreamEnd: vi.fn(),
+      sendMessage: vi.fn(async () => {}),
+    };
+    const state = {
+      streamStarted: false,
+      outputSentToUser: false,
+      lastAssistantStreamText: '',
+    };
+
+    await forwardContainerOutputToChannel(
+      channel,
+      'web:test_session',
+      {
+        status: 'success',
+        result: null,
+        newSessionId: 'session-1',
+        stepNumber: 1,
+        stepType: 'assistant_text',
+        stepContent: '这是最终答案。',
+      } as ContainerOutput,
+      state,
+    );
+
+    await forwardContainerOutputToChannel(
+      channel,
+      'web:test_session',
+      {
+        status: 'success',
+        result: '这是最终答案。',
+        newSessionId: 'session-1',
+      } as ContainerOutput,
+      state,
+    );
+
+    expect(channel.sendMessage).not.toHaveBeenCalled();
+    expect(channel.sendStreamEnd).toHaveBeenCalledWith('web:test_session');
+  });
+
+  it('sends the final assistant message for channels without stream support even if it matches the last streamed text', async () => {
+    const channel = {
+      sendMessage: vi.fn(async () => {}),
+    };
+    const state = {
+      streamStarted: false,
+      outputSentToUser: false,
+      lastAssistantStreamText: '',
+    };
+
+    await forwardContainerOutputToChannel(
+      channel,
+      'feishu:test_chat',
+      {
+        status: 'success',
+        result: null,
+        newSessionId: 'session-1',
+        stepNumber: 1,
+        stepType: 'assistant_text',
+        stepContent: 'Hi! How can I help you today?',
+      } as ContainerOutput,
+      state,
+    );
+
+    await forwardContainerOutputToChannel(
+      channel,
+      'feishu:test_chat',
+      {
+        status: 'success',
+        result: 'Hi! How can I help you today?',
+        newSessionId: 'session-1',
+      } as ContainerOutput,
+      state,
+    );
+
+    expect(channel.sendMessage).toHaveBeenCalledWith(
+      'feishu:test_chat',
+      'Hi! How can I help you today?',
+    );
+    expect(state).toEqual({
+      streamStarted: false,
+      outputSentToUser: true,
+      lastAssistantStreamText: 'Hi! How can I help you today?',
+    });
   });
 });
