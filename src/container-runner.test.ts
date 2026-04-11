@@ -240,6 +240,39 @@ describe('container-runner timeout behavior', () => {
     expect(result.newSessionId).toBe('session-456');
   });
 
+  it('passes through streamed tool step markers to onOutput callbacks', async () => {
+    const onOutput = vi.fn(async () => {});
+    const resultPromise = runContainerAgent(
+      testGroup,
+      testInput,
+      () => {},
+      onOutput,
+    );
+
+    emitOutputMarker(fakeProc, {
+      status: 'success',
+      result: null,
+      newSessionId: 'session-stream',
+      stepNumber: 1,
+      stepType: 'tool_call',
+      stepContent:
+        '{"name":"Read","arguments":{"file_path":"/workspace/group/package.json"}}',
+    } as ContainerOutput);
+
+    await vi.advanceTimersByTimeAsync(10);
+    fakeProc.emit('close', 0);
+    await vi.advanceTimersByTimeAsync(10);
+    await resultPromise;
+
+    expect(onOutput).toHaveBeenCalledWith(
+      expect.objectContaining({
+        newSessionId: 'session-stream',
+        stepType: 'tool_call',
+        stepNumber: 1,
+      }),
+    );
+  });
+
   it('passes .env auth credentials into the container when OneCLI is unavailable', async () => {
     onecliApplyContainerConfigMock.mockResolvedValue(false);
     readEnvFileMock.mockReturnValue({

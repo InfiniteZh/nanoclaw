@@ -51,6 +51,9 @@ export interface ContainerOutput {
   result: string | null;
   newSessionId?: string;
   error?: string;
+  stepNumber?: number;
+  stepType?: 'tool_call' | 'tool_result' | 'assistant_text';
+  stepContent?: string;
 }
 
 interface VolumeMount {

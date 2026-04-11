@@ -25,7 +25,8 @@
     "@larksuiteoapi/node-sdk": "^1.59.0",
     "@onecli-sh/sdk": "^0.2.0",
     "better-sqlite3": "11.10.0",
-    "cron-parser": "5.5.0"
+    "cron-parser": "5.5.0",
+    "nanoclaw-web-ui": "file:./nanoclaw-web-ui"
   },
   "devDependencies": {
     "@eslint/js": "^9.35.0",

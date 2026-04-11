@@ -147,7 +147,10 @@ export class FeishuChannel implements Channel {
         logger.info({ jid }, 'Feishu JSON 2.0 card passthrough sent');
       } catch (err) {
         this.outgoingQueue.push({ jid, text });
-        logger.warn({ jid, err }, 'Failed to send Feishu card passthrough, queued');
+        logger.warn(
+          { jid, err },
+          'Failed to send Feishu card passthrough, queued',
+        );
       }
       return;
     }

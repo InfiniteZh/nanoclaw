@@ -23,6 +23,7 @@ import {
   PreCompactHookInput,
 } from '@anthropic-ai/claude-agent-sdk';
 import { fileURLToPath } from 'url';
+import { extractToolStepsFromSdkMessage } from './stream-steps.js';
 
 interface ContainerInput {
   prompt: string;
@@ -40,6 +41,9 @@ interface ContainerOutput {
   result: string | null;
   newSessionId?: string;
   error?: string;
+  stepNumber?: number;
+  stepType?: 'tool_call' | 'tool_result' | 'assistant_text';
+  stepContent?: string;
 }
 
 interface SessionEntry {
@@ -122,6 +126,7 @@ function writeOutput(output: ContainerOutput): void {
   console.log(JSON.stringify(output));
   console.log(OUTPUT_END_MARKER);
 }
+
 
 function log(message: string): void {
   console.error(`[agent-runner] ${message}`);
@@ -411,6 +416,7 @@ async function runQuery(
   let lastAssistantUuid: string | undefined;
   let messageCount = 0;
   let resultCount = 0;
+  let stepCount = 0;
 
   // Load global CLAUDE.md as additional system context (shared across all groups)
   const globalClaudeMdPath = '/workspace/global/CLAUDE.md';
@@ -534,6 +540,19 @@ async function runQuery(
         status: 'success',
         result: textResult || null,
         newSessionId,
+      });
+    }
+
+    const extractedToolSteps = extractToolStepsFromSdkMessage(message);
+    for (const step of extractedToolSteps) {
+      stepCount += 1;
+      writeOutput({
+        status: 'success',
+        result: null,
+        newSessionId,
+        stepNumber: stepCount,
+        stepType: step.stepType,
+        stepContent: step.content,
       });
     }
   }

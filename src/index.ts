@@ -15,6 +15,7 @@ import {
   TIMEZONE,
 } from './config.js';
 import './channels/index.js';
+import { groupFolderFromJid } from './channels/web-session.js';
 import {
   getChannelFactory,
   getRegisteredChannelNames,
@@ -139,6 +140,58 @@ function getOrRecoverCursor(chatJid: string): string {
 function saveState(): void {
   setRouterState('last_timestamp', lastTimestamp);
   setRouterState('last_agent_timestamp', JSON.stringify(lastAgentTimestamp));
+}
+
+export interface StreamForwardState {
+  streamStarted: boolean;
+  outputSentToUser: boolean;
+}
+
+export async function forwardContainerOutputToChannel(
+  channel: Pick<
+    Channel,
+    'sendMessage' | 'sendStreamStart' | 'sendStreamStep' | 'sendStreamEnd'
+  >,
+  chatJid: string,
+  result: ContainerOutput,
+  state: StreamForwardState,
+): Promise<void> {
+  if (result.stepType && result.stepContent && result.stepNumber) {
+    if (!state.streamStarted) {
+      channel.sendStreamStart?.(chatJid);
+      state.streamStarted = true;
+    }
+
+    channel.sendStreamStep?.(chatJid, {
+      stepNumber: result.stepNumber,
+      stepType: result.stepType,
+      content: result.stepContent,
+    });
+    return;
+  }
+
+  if (result.result) {
+    const raw =
+      typeof result.result === 'string'
+        ? result.result
+        : JSON.stringify(result.result);
+    const text = raw.replace(/<internal>[\s\S]*?<\/internal>/g, '').trim();
+    if (text) {
+      await channel.sendMessage(chatJid, text);
+      state.outputSentToUser = true;
+      state.streamStarted = false;
+    }
+    return;
+  }
+
+  if (
+    result.status === 'success' &&
+    state.streamStarted &&
+    !state.outputSentToUser
+  ) {
+    channel.sendStreamEnd?.(chatJid);
+    state.streamStarted = false;
+  }
 }
 
 function registerGroup(jid: string, group: RegisteredGroup): void {
@@ -280,23 +333,26 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
 
   await channel.setTyping?.(chatJid, true);
   let hadError = false;
-  let outputSentToUser = false;
+  const streamForwardState: StreamForwardState = {
+    streamStarted: false,
+    outputSentToUser: false,
+  };
 
   const output = await runAgent(group, prompt, chatJid, async (result) => {
-    // Streaming output callback — called for each agent result
-    if (result.result) {
-      const raw =
-        typeof result.result === 'string'
-          ? result.result
-          : JSON.stringify(result.result);
-      // Strip <internal>...</internal> blocks — agent uses these for internal reasoning
-      const text = raw.replace(/<internal>[\s\S]*?<\/internal>/g, '').trim();
-      logger.info({ group: group.name }, `Agent output: ${raw.length} chars`);
-      if (text) {
-        await channel.sendMessage(chatJid, text);
-        outputSentToUser = true;
-      }
-      // Only reset idle timer on actual results, not session-update markers (result: null)
+    if (result.result || result.stepType) {
+      const logLength = result.result
+        ? String(result.result).length
+        : (result.stepContent?.length ?? 0);
+      logger.info(
+        { group: group.name, kind: result.stepType ?? 'message' },
+        `Agent output: ${logLength} chars`,
+      );
+      await forwardContainerOutputToChannel(
+        channel,
+        chatJid,
+        result,
+        streamForwardState,
+      );
       resetIdleTimer();
     }
 
@@ -315,7 +371,7 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
   if (output === 'error' || hadError) {
     // If we already sent output to the user, don't roll back the cursor —
     // the user got their response and re-processing would send duplicates.
-    if (outputSentToUser) {
+    if (streamForwardState.outputSentToUser) {
       logger.warn(
         { group: group.name },
         'Agent error after output was sent, skipping cursor rollback to prevent duplicates',
@@ -673,9 +729,11 @@ async function main(): Promise<void> {
     registeredGroups: () => registeredGroups,
     autoRegisterChat: (jid: string, name: string) => {
       if (registeredGroups[jid]) return;
+      const folder =
+        groupFolderFromJid(jid) ?? jid.replace(/[^a-zA-Z0-9_-]/g, '_');
       registerGroup(jid, {
         name,
-        folder: jid.replace(/[^a-zA-Z0-9_-]/g, '_'),
+        folder,
         trigger: DEFAULT_TRIGGER,
         added_at: new Date().toISOString(),
         requiresTrigger: false,

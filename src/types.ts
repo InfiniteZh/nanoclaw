@@ -89,6 +89,17 @@ export interface Channel {
   disconnect(): Promise<void>;
   // Optional: typing indicator. Channels that support it implement it.
   setTyping?(jid: string, isTyping: boolean): Promise<void>;
+  // Optional: live stream events for progressive tool/output rendering.
+  sendStreamStart?(jid: string): void;
+  sendStreamStep?(
+    jid: string,
+    step: {
+      stepNumber: number;
+      stepType: 'tool_call' | 'tool_result' | 'assistant_text';
+      content: string;
+    },
+  ): void;
+  sendStreamEnd?(jid: string, result?: string): void;
   // Optional: sync group/chat names from the platform.
   syncGroups?(force: boolean): Promise<void>;
 }

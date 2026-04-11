@@ -11,4 +11,7 @@ import './feishu.js';
 
 // telegram
 
+// web
+import './web.js';
+
 // whatsapp

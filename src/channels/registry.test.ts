@@ -39,4 +39,11 @@ describe('channel registry', () => {
     registerChannel('overwrite-test', factory2);
     expect(getChannelFactory('overwrite-test')).toBe(factory2);
   });
+
+  it('includes the web channel after the module is imported', async () => {
+    await import('./web.js');
+
+    const names = getRegisteredChannelNames();
+    expect(names).toContain('web');
+  });
 });
